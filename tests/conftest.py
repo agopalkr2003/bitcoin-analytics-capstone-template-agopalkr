@@ -1,0 +1,729 @@
+"""Shared fixtures and mocking utilities for the test suite."""
+
+import json
+import os
+import sys
+import tempfile
+from io import StringIO
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import numpy as np
+import pandas as pd
+import pytest
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+# -----------------------------------------------------------------------------
+# Sample Data Fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_btc_prices():
+    """Generate realistic BTC price data for testing."""
+    # Create date range from 2020 to 2025
+    dates = pd.date_range(start="2020-01-01", end="2025-12-31", freq="D")
+
+    # Generate realistic-looking price data with trend and volatility
+    np.random.seed(42)
+    base_price = 10000
+    returns = np.random.normal(0.001, 0.03, len(dates))
+    prices = base_price * np.exp(np.cumsum(returns))
+
+    return pd.Series(prices, index=dates, name="PriceUSD")
+
+
+@pytest.fixture
+def sample_btc_df(sample_btc_prices):
+    """Create a sample BTC DataFrame similar to CoinMetrics data."""
+    df = pd.DataFrame({"PriceUSD": sample_btc_prices})
+    df["PriceUSD_coinmetrics"] = df["PriceUSD"]
+
+    # Add MVRV data (CapMVRVCur) - cycles between 0.5 and 4.0 over ~4 years
+    n = len(df)
+    np.random.seed(123)
+    mvrv_base = 1.5 + 1.2 * np.sin(np.arange(n) * 2 * np.pi / 1461)  # 4-year cycle
+    mvrv_noise = np.random.normal(0, 0.15, n)
+    df["CapMVRVCur"] = np.clip(mvrv_base + mvrv_noise, 0.5, 5.0)
+
+    df.index.name = "time"
+    return df
+
+
+@pytest.fixture
+def sample_features_df(sample_btc_df):
+    """Create precomputed features DataFrame."""
+    from model_development import precompute_features
+
+    return precompute_features(sample_btc_df)
+
+
+@pytest.fixture
+def sample_spd_df():
+    """Create sample SPD backtest results DataFrame."""
+    windows = [
+        "2020-01-01 → 2021-01-01",
+        "2020-02-01 → 2021-02-01",
+        "2020-03-01 → 2021-03-01",
+        "2020-04-01 → 2021-04-01",
+        "2020-05-01 → 2021-05-01",
+    ]
+
+    data = {
+        "min_sats_per_dollar": [1000, 1100, 900, 1050, 950],
+        "max_sats_per_dollar": [5000, 5500, 4500, 5200, 4800],
+        "uniform_sats_per_dollar": [2500, 2800, 2300, 2600, 2400],
+        "dynamic_sats_per_dollar": [2800, 3100, 2500, 2900, 2600],
+        "uniform_percentile": [37.5, 38.6, 38.9, 37.3, 37.7],
+        "dynamic_percentile": [45.0, 45.5, 44.4, 44.6, 42.9],
+        "excess_percentile": [7.5, 6.9, 5.5, 7.3, 5.2],
+    }
+
+    return pd.DataFrame(data, index=windows)
+
+
+# -----------------------------------------------------------------------------
+# Mock CoinMetrics CSV Data
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_coinmetrics_csv():
+    """Generate sample CoinMetrics CSV data."""
+    dates = pd.date_range(start="2020-01-01", end="2025-12-31", freq="D")
+    np.random.seed(42)
+    base_price = 10000
+    returns = np.random.normal(0.001, 0.03, len(dates))
+    prices = base_price * np.exp(np.cumsum(returns))
+
+    df = pd.DataFrame({"time": dates.strftime("%Y-%m-%d"), "PriceUSD": prices})
+
+    csv_buffer = StringIO()
+    df.to_csv(csv_buffer, index=False)
+    return csv_buffer.getvalue()
+
+
+# -----------------------------------------------------------------------------
+# Network Mocking Fixtures
+# -----------------------------------------------------------------------------
+
+
+
+
+
+
+# -----------------------------------------------------------------------------
+# Time/Date Fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def frozen_sunday():
+    """Freeze time to a Sunday for testing."""
+    from freezegun import freeze_time
+
+    with freeze_time("2025-12-28"):  # A Sunday
+        yield
+
+
+@pytest.fixture
+def frozen_weekday():
+    """Freeze time to a weekday for testing."""
+    from freezegun import freeze_time
+
+    with freeze_time("2025-12-24"):  # A Wednesday
+        yield
+
+
+# -----------------------------------------------------------------------------
+# File System Fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def temp_output_dir():
+    """Create a temporary directory for test outputs."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield tmpdir
+
+
+@pytest.fixture
+def snapshot_dir():
+    """Return the path to the snapshots directory."""
+    return Path(__file__).parent / "snapshots"
+
+
+# -----------------------------------------------------------------------------
+# Snapshot/Golden Test Utilities
+# -----------------------------------------------------------------------------
+
+
+class SnapshotManager:
+    """Utility for managing snapshot/golden tests."""
+
+    def __init__(self, snapshot_dir: Path):
+        self.snapshot_dir = snapshot_dir
+
+    def load(self, filename: str):
+        """Load a snapshot file."""
+        filepath = self.snapshot_dir / filename
+        if not filepath.exists():
+            raise FileNotFoundError(f"Snapshot file not found: {filepath}")
+
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        # Convert to appropriate pandas type
+        if "index" in data and "values" in data:
+            return pd.Series(data["values"], index=pd.to_datetime(data["index"]))
+        return data
+
+    def save(self, data, filename: str):
+        """Save data to a snapshot file."""
+        filepath = self.snapshot_dir / filename
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+
+        if isinstance(data, pd.Series):
+            save_data = {
+                "index": [str(i) for i in data.index],
+                "values": data.values.tolist(),
+            }
+        elif isinstance(data, pd.DataFrame):
+            save_data = data.to_dict(orient="list")
+        else:
+            save_data = data
+
+        with open(filepath, "w") as f:
+            json.dump(save_data, f, indent=2)
+
+
+@pytest.fixture
+def snapshot(snapshot_dir):
+    """Provide a snapshot manager for golden tests."""
+    return SnapshotManager(snapshot_dir)
+
+
+# -----------------------------------------------------------------------------
+# Helper Fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sunday_date_range():
+    """Generate a date range of Sundays for testing."""
+    start = pd.Timestamp("2025-01-05")  # First Sunday of 2025
+    end = pd.Timestamp("2025-06-29")  # A Sunday ~6 months later
+    return pd.date_range(start=start, end=end, freq="W-SUN")
+
+
+@pytest.fixture
+def sample_weights():
+    """Generate sample weights that sum to 1."""
+    np.random.seed(42)
+    raw = np.random.exponential(1, 100)
+    weights = raw / raw.sum()
+    return weights
+
+
+@pytest.fixture
+def sample_metrics():
+    """Generate sample metrics dictionary for testing."""
+    return {
+        "score": 65.5,
+        "win_rate": 72.0,
+        "exp_decay_percentile": 59.0,
+        "mean_excess": 5.2,
+        "median_excess": 4.8,
+        "relative_improvement_pct_mean": 12.5,
+        "relative_improvement_pct_median": 11.2,
+        "mean_ratio": 1.12,
+        "median_ratio": 1.10,
+        "total_windows": 100,
+        "wins": 72,
+        "losses": 28,
+    }
+
+
+# -----------------------------------------------------------------------------
+# Simulation Test Fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def simulation_price_generator():
+    """Generate synthetic BTC prices using geometric Brownian motion.
+
+    Returns a function that generates prices from start_date through end_date.
+    """
+
+    def _generate_prices(
+        start_date,
+        end_date,
+        initial_price=100000.0,
+        drift=0.0001,
+        volatility=0.03,
+        seed=42,
+    ):
+        """Generate synthetic BTC prices.
+
+        Args:
+            start_date: Start date (pd.Timestamp or string)
+            end_date: End date (pd.Timestamp or string)
+            initial_price: Starting price in USD
+            drift: Daily drift (mean return per day)
+            volatility: Daily volatility (std dev of returns)
+            seed: Random seed for reproducibility
+
+        Returns:
+            pd.Series with prices indexed by date
+        """
+        dates = pd.date_range(start=start_date, end=end_date, freq="D")
+        np.random.seed(seed)
+
+        # Generate log returns using geometric Brownian motion
+        dt = 1.0  # 1 day
+        returns = np.random.normal(drift * dt, volatility * np.sqrt(dt), len(dates))
+
+        # Convert to prices
+        log_prices = np.log(initial_price) + np.cumsum(returns)
+        prices = np.exp(log_prices)
+
+        # Ensure prices stay within reasonable bounds
+        prices = np.clip(prices, 1000.0, 1000000.0)
+
+        return pd.Series(prices, index=dates, name="PriceUSD")
+
+    return _generate_prices
+
+
+@pytest.fixture
+def simulation_btc_df(simulation_price_generator):
+    """Create a BTC DataFrame with synthetic prices extending into the future.
+
+    Generates prices from 2020-01-01 through 2028-12-31 for simulation testing.
+    """
+    start_date = "2020-01-01"
+    end_date = "2028-12-31"
+    prices = simulation_price_generator(start_date, end_date, initial_price=50000.0)
+
+    df = pd.DataFrame({"PriceUSD": prices})
+    df["PriceUSD_coinmetrics"] = df["PriceUSD"]
+    df.index.name = "time"
+    return df
+
+
+
+
+# -----------------------------------------------------------------------------
+# Forward-Looking Bias Test Fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def truncated_btc_df_factory(sample_btc_df):
+    """Factory fixture to create truncated BTC DataFrames for testing.
+
+    Returns a function that truncates data up to a specified date,
+    simulating point-in-time data availability.
+    """
+
+    def _create_truncated(truncate_date):
+        """Create DataFrame with data only up to truncate_date.
+
+        Args:
+            truncate_date: Date to truncate at (inclusive)
+
+        Returns:
+            DataFrame with data only up to truncate_date
+        """
+        truncate_date = pd.Timestamp(truncate_date)
+        return sample_btc_df.loc[:truncate_date].copy()
+
+    return _create_truncated
+
+
+@pytest.fixture
+def truncated_features_df_factory(sample_btc_df):
+    """Factory fixture to create truncated features DataFrames for testing.
+
+    Returns a function that precomputes features using only data up to
+    a specified date, simulating point-in-time feature availability.
+    """
+    from model_development import precompute_features
+
+    def _create_truncated_features(truncate_date):
+        """Create features using only data up to truncate_date.
+
+        Args:
+            truncate_date: Date to truncate at (inclusive)
+
+        Returns:
+            DataFrame with features computed from data up to truncate_date
+        """
+        truncate_date = pd.Timestamp(truncate_date)
+        truncated_df = sample_btc_df.loc[:truncate_date].copy()
+        return precompute_features(truncated_df)
+
+    return _create_truncated_features
+
+
+@pytest.fixture
+def masked_features_df_factory(sample_features_df):
+    """Factory fixture to create features with future data masked to NaN.
+
+    Returns a function that masks feature values after a specified date,
+    useful for testing that computations don't peek at future values.
+    """
+
+    def _create_masked_features(mask_after_date):
+        """Create features with values after mask_after_date set to NaN.
+
+        Args:
+            mask_after_date: Date after which to mask values
+
+        Returns:
+            DataFrame with features masked after the specified date
+        """
+        mask_after_date = pd.Timestamp(mask_after_date)
+        masked_df = sample_features_df.copy()
+        masked_df.loc[masked_df.index > mask_after_date] = np.nan
+        return masked_df
+
+    return _create_masked_features
+
+
+@pytest.fixture
+def walk_forward_dates():
+    """Generate dates for walk-forward testing.
+
+    Returns a list of dates suitable for walk-forward validation,
+    spaced at regular intervals.
+    """
+    return [
+        pd.Timestamp("2024-01-01"),
+        pd.Timestamp("2024-02-01"),
+        pd.Timestamp("2024-03-01"),
+        pd.Timestamp("2024-04-01"),
+        pd.Timestamp("2024-05-01"),
+        pd.Timestamp("2024-06-01"),
+    ]
+
+
+@pytest.fixture
+def shuffled_btc_df_factory(sample_btc_df):
+    """Factory fixture to create DataFrames with shuffled prices.
+
+    Returns a function that shuffles prices while keeping dates fixed,
+    useful for testing whether strategy has spurious predictive power.
+    """
+
+    def _create_shuffled(seed=42):
+        """Create DataFrame with prices randomly shuffled.
+
+        Args:
+            seed: Random seed for reproducibility
+
+        Returns:
+            DataFrame with shuffled prices
+        """
+        np.random.seed(seed)
+        shuffled_df = sample_btc_df.copy()
+        shuffled_df["PriceUSD_coinmetrics"] = np.random.permutation(
+            sample_btc_df["PriceUSD_coinmetrics"].values
+        )
+        shuffled_df["PriceUSD"] = shuffled_df["PriceUSD_coinmetrics"]
+        return shuffled_df
+
+    return _create_shuffled
+
+
+@pytest.fixture
+def extreme_price_df_factory(sample_btc_df):
+    """Factory fixture to create DataFrames with extreme price scenarios.
+
+    Returns a function that modifies prices for stress testing.
+    """
+
+    def _create_extreme(scenario="spike", date="2024-06-01", factor=10.0):
+        """Create DataFrame with extreme price modification.
+
+        Args:
+            scenario: Type of modification ('spike', 'crash', 'constant')
+            date: Date to apply modification (for spike/crash)
+            factor: Multiplication factor for spike/crash
+
+        Returns:
+            DataFrame with modified prices
+        """
+        date = pd.Timestamp(date)
+        extreme_df = sample_btc_df.copy()
+
+        if scenario == "spike":
+            # Sudden price spike
+            if date in extreme_df.index:
+                extreme_df.loc[date:, "PriceUSD_coinmetrics"] *= factor
+                extreme_df.loc[date:, "PriceUSD"] *= factor
+        elif scenario == "crash":
+            # Sudden price crash
+            if date in extreme_df.index:
+                extreme_df.loc[date:, "PriceUSD_coinmetrics"] /= factor
+                extreme_df.loc[date:, "PriceUSD"] /= factor
+        elif scenario == "constant":
+            # All prices constant
+            extreme_df["PriceUSD_coinmetrics"] = 50000.0
+            extreme_df["PriceUSD"] = 50000.0
+
+        return extreme_df
+
+    return _create_extreme
+
+
+# -----------------------------------------------------------------------------
+# Validation Test Fixtures (from test_validate_neondb.py)
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_btc_df_validate():
+    """Create sample BTC price data for validation testing."""
+    from tests.test_helpers import PRICE_COL, SAMPLE_END, SAMPLE_START
+
+    dates = pd.date_range(SAMPLE_START, SAMPLE_END, freq="D")
+    np.random.seed(42)
+
+    # Simulate realistic BTC prices with trend and volatility
+    base_price = 50000
+    trend = np.linspace(0, 50000, len(dates))
+    noise = np.random.randn(len(dates)) * 2000
+    prices = np.maximum(base_price + trend + noise, 10000)
+
+    return pd.DataFrame({PRICE_COL: prices}, index=dates)
+
+
+@pytest.fixture
+def sample_features_df_validate(sample_btc_df_validate):
+    """Precompute features for validation sample data."""
+    from model_development import precompute_features
+
+    return precompute_features(sample_btc_df_validate)
+
+
+
+
+# Note: sample_features_df and sample_btc_df are already defined earlier in conftest.py
+# Validation tests should use sample_features_df_validate and sample_btc_df_validate
+# to avoid conflicts with other test fixtures
+
+
+# -----------------------------------------------------------------------------
+# Deterministic Test Fixtures for Unit Tests
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def deterministic_features_fixture():
+    """Create 5-day toy features with obvious ranking for deterministic testing.
+
+    Features are designed so that day with lowest z-score gets highest weight.
+    """
+    from model_development import FEATS
+
+    dates = pd.date_range("2025-01-01", "2025-01-05", freq="D")
+    # Create features where day 0 has lowest z-scores (should get highest weight)
+    # Day 4 has highest z-scores (should get lowest weight)
+    features_data = {}
+    for feat in FEATS:
+        # Decreasing z-scores from day 0 to day 4
+        features_data[feat] = [4.0 - i for i in range(5)]
+
+    features_df = pd.DataFrame(features_data, index=dates)
+    # Add price column
+    features_df["PriceUSD_coinmetrics"] = [50000 + i * 1000 for i in range(5)]
+
+    return features_df
+
+
+@pytest.fixture
+def min_w_floor_fixture():
+    """Create features that would push weights below MIN_W without floor."""
+    from model_development import FEATS
+
+    dates = pd.date_range("2025-01-01", "2025-01-10", freq="D")
+    # Create extreme features that would cause very small raw weights
+    features_data = {}
+    for feat in FEATS:
+        # Very high z-scores (clipped at 4) for most days, low for one day
+        features_data[feat] = [4.0] * 9 + [0.0]
+
+    features_df = pd.DataFrame(features_data, index=dates)
+    features_df["PriceUSD_coinmetrics"] = [50000] * 10
+
+    return features_df
+
+
+@pytest.fixture
+def degenerate_features_fixture():
+    """Create all-zero or constant features for degenerate case testing."""
+    from model_development import FEATS
+
+    dates = pd.date_range("2025-01-01", "2025-01-05", freq="D")
+    # All features are zero (constant)
+    features_data = {feat: [0.0] * 5 for feat in FEATS}
+    features_df = pd.DataFrame(features_data, index=dates)
+    features_df["PriceUSD_coinmetrics"] = [50000] * 5
+
+    return features_df
+
+
+@pytest.fixture
+def point_in_time_context():
+    """Context manager for point-in-time testing.
+
+    Returns a class that helps manage state for point-in-time tests.
+    """
+
+    class PointInTimeContext:
+        """Helper class for point-in-time test state management."""
+
+        def __init__(self):
+            self.current_date = None
+            self.computed_weights = {}
+
+        def set_date(self, date):
+            """Set the current point-in-time date."""
+            self.current_date = pd.Timestamp(date)
+
+        def store_weights(self, key, weights):
+            """Store computed weights for later comparison."""
+            self.computed_weights[key] = weights.copy()
+
+        def get_weights(self, key):
+            """Retrieve previously computed weights."""
+            return self.computed_weights.get(key)
+
+        def compare_weights(self, key1, key2, dates=None):
+            """Compare weights from two different computations.
+
+            Args:
+                key1: First weight key
+                key2: Second weight key
+                dates: Optional list of dates to compare (default: all common dates)
+
+            Returns:
+                dict with comparison results
+            """
+            w1 = self.computed_weights.get(key1)
+            w2 = self.computed_weights.get(key2)
+
+            if w1 is None or w2 is None:
+                return {"error": "Weights not found"}
+
+            if dates is None:
+                dates = w1.index.intersection(w2.index)
+
+            max_diff = 0.0
+            diffs = {}
+            for date in dates:
+                if date in w1.index and date in w2.index:
+                    diff = abs(w1[date] - w2[date])
+                    diffs[date] = diff
+                    max_diff = max(max_diff, diff)
+
+            return {
+                "max_diff": max_diff,
+                "diffs": diffs,
+                "all_equal": max_diff < 1e-12,
+            }
+
+    return PointInTimeContext()
+
+
+# -----------------------------------------------------------------------------
+# Edge Case Test Fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def constant_price_df(sample_btc_df):
+    """DataFrame with constant prices for zero-span testing.
+
+    All prices are set to a constant value (50000.0) to test edge cases
+    where price span is zero and percentile calculations are undefined.
+    """
+    df = sample_btc_df.copy()
+    df["PriceUSD_coinmetrics"] = 50000.0
+    df["PriceUSD"] = 50000.0
+    return df
+
+
+@pytest.fixture
+def extreme_price_df(sample_btc_df):
+    """DataFrame with 10x price swing for stress testing.
+
+    Prices in the second half of the data are multiplied by 10x to simulate
+    extreme market conditions and test numerical stability.
+    """
+    df = sample_btc_df.copy()
+    mid_idx = len(df) // 2
+    df.iloc[mid_idx:, df.columns.get_loc("PriceUSD_coinmetrics")] *= 10
+    df.iloc[mid_idx:, df.columns.get_loc("PriceUSD")] *= 10
+    return df
+
+
+@pytest.fixture
+def all_wins_spd_df():
+    """SPD DataFrame where dynamic always beats uniform (100% win rate)."""
+    windows = [
+        "2020-01-01 → 2021-01-01",
+        "2020-02-01 → 2021-02-01",
+        "2020-03-01 → 2021-03-01",
+    ]
+    data = {
+        "min_sats_per_dollar": [1000, 1100, 900],
+        "max_sats_per_dollar": [5000, 5500, 4500],
+        "uniform_sats_per_dollar": [2500, 2800, 2300],
+        "dynamic_sats_per_dollar": [3500, 3800, 3300],
+        "uniform_percentile": [37.5, 38.6, 38.9],
+        "dynamic_percentile": [62.5, 61.4, 66.7],
+        "excess_percentile": [25.0, 22.8, 27.8],
+    }
+    return pd.DataFrame(data, index=windows)
+
+
+@pytest.fixture
+def all_losses_spd_df():
+    """SPD DataFrame where dynamic always loses to uniform (0% win rate)."""
+    windows = [
+        "2020-01-01 → 2021-01-01",
+        "2020-02-01 → 2021-02-01",
+        "2020-03-01 → 2021-03-01",
+    ]
+    data = {
+        "min_sats_per_dollar": [1000, 1100, 900],
+        "max_sats_per_dollar": [5000, 5500, 4500],
+        "uniform_sats_per_dollar": [2500, 2800, 2300],
+        "dynamic_sats_per_dollar": [2000, 2200, 1800],
+        "uniform_percentile": [37.5, 38.6, 38.9],
+        "dynamic_percentile": [25.0, 25.0, 25.0],
+        "excess_percentile": [-12.5, -13.6, -13.9],
+    }
+    return pd.DataFrame(data, index=windows)
+
+
+@pytest.fixture
+def single_window_spd_df():
+    """SPD DataFrame with only one window for edge case testing."""
+    windows = ["2020-01-01 → 2021-01-01"]
+    data = {
+        "min_sats_per_dollar": [1000],
+        "max_sats_per_dollar": [5000],
+        "uniform_sats_per_dollar": [2500],
+        "dynamic_sats_per_dollar": [2800],
+        "uniform_percentile": [37.5],
+        "dynamic_percentile": [45.0],
+        "excess_percentile": [7.5],
+    }
+    return pd.DataFrame(data, index=windows)
