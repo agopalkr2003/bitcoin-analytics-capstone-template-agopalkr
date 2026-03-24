@@ -704,8 +704,110 @@ def compute_dynamic_multiplier(
 
 # Note: _clean_array is imported from template.model_development_template
 
+import math
+def computeQty(df):
+    qty=0
+    #up_days=30
+    #down_days=30
+    up_days=30
+    down_days=15
+    traded=False
+    upTrend=False
+    downTrend=False
+    i=0
+    n=len(df)
+    print('n',n)
+    cnt=0
+    lst=[]
+    AMT=10000
+    buy_dates=[]
+    for row in df.itertuples(index=True): # index=False excludes the index from the tuple
+        #print(row.PriceUSD, row.MA_PriceUSD)
+        qty_for_day = 1e-6
+        if math.isnan(row.MA_PriceUSD):
+            #print('NAN')
+            lst.append(qty_for_day)
+            continue
+        if traded==False:
+            if row.PriceUSD_coinmetrics > row.MA_PriceUSD:
+                qty_for_day = (up_days*(AMT/n))/row.PriceUSD_coinmetrics
+                traded=True
+                upTrend=True
+                downTrend=False
+                #print(row.Index)
+                buy_dates.append(row.Index)
+            elif row.PriceUSD_coinmetrics < row.MA_PriceUSD:
+                traded=True
+                downTrend=True
+                upTrend=False
+        else:
+            if upTrend == True:
+                cnt+=1
+            elif downTrend == True:
+                cnt+=1
+
+            if cnt >= up_days and upTrend:
+                upTrend = False
+                traded = False
+                cnt=0
+            if cnt >= down_days and downTrend:
+                qty_for_day = (down_days *(AMT/n))/row.PriceUSD_coinmetrics
+                downTrend=False
+                traded=False
+                cnt=0
+                buy_dates.append(row.Index)
+        lst.append(qty_for_day)
+    lst = lst/np.sum(lst)
+    return (lst,buy_dates)
+
 
 def compute_weights_fast(
+        features_df: pd.DataFrame,
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp,
+        n_past: int | None = None,
+        locked_weights: np.ndarray | None = None,
+) -> pd.Series:
+    """Compute weights for a date window using precomputed features.
+
+    Args:
+        features_df: DataFrame from precompute_features()
+        start_date: Window start
+        end_date: Window end
+        n_past: Number of past days (for stable allocation)
+        locked_weights: Optional locked weights from database
+
+    Returns:
+        Series of weights indexed by date
+    """
+    df = features_df.loc[start_date:end_date].copy()
+    #window=30
+    # Very good performance
+    window=15
+    #df_small = df_btc_2025[['PriceUSD']]
+    #ma1 = df['PriceUSD'].shift().rolling(window, min_periods=window // 2).mean().to_frame()
+
+
+    # 1. Shift the data by one day (or row)
+    # This aligns the previous day's value to the current row.
+    #shifted_value = df['PriceUSD_coinmetrics'].shift(1)
+    shifted_value = df['PriceUSD_coinmetrics'].shift(3)
+
+    df['MA_PriceUSD'] = shifted_value.rolling(window=window, min_periods=window//2).mean()
+
+    print('CHANGE HERE df-->', df.shape)
+
+    if df.empty:
+        return pd.Series(dtype=float)
+
+    l = computeQty(df)
+    print('Lengh of l',len(l[0]))
+    return pd.Series(l[0], index=df.index)
+
+
+# NEED TO CHANGE THIS
+# CHANGE THIS TO RETURN NEW LOGIC
+def compute_weights_fast_Orig(
     features_df: pd.DataFrame,
     start_date: pd.Timestamp,
     end_date: pd.Timestamp,
@@ -725,6 +827,8 @@ def compute_weights_fast(
         Series of weights indexed by date
     """
     df = features_df.loc[start_date:end_date]
+    print('CHANGE HERE df-->', df.shape)
+
     if df.empty:
         return pd.Series(dtype=float)
 
@@ -777,12 +881,14 @@ def compute_weights_fast(
     )
     raw = base * dyn
 
+
     #print('MY METHOD 2 ---->', raw.shape)
 
     # Allocate with stability
     if n_past is None:
         n_past = n
     weights = allocate_sequential_stable(raw, n_past, locked_weights)
+    print('CHANGE HERE WEIGHTS-->', weights.head(2))
 
     return pd.Series(weights, index=df.index)
 
@@ -836,6 +942,7 @@ def compute_window_weights(
     else:
         n_past = 0
 
+    #GOPANANT
     weights = compute_weights_fast(
         features_df, start_date, end_date, n_past, locked_weights
     )
