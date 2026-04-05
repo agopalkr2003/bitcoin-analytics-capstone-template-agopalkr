@@ -1,0 +1,2 @@
+category,n_obs,same_day_corr,abs_same_day_corr,price_change_corr,best_lag,best_lag_corr,abs_best_lag_corr,best_lag_n,avg_market_count,avg_token_count
+Uncategorized,1065,0.018583188071450502,0.018583188071450502,0.03420760737751266,-6,0.08684533914342105,0.08684533914342105,1059,642.0159624413145,1284.0281690140846

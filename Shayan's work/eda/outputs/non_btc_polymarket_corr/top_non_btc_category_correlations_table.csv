@@ -1,0 +1,2 @@
+rank,category,n_obs,same_day_corr,best_lag,best_lag_corr,abs_best_lag_corr,avg_market_count,avg_token_count
+1,Uncategorized,1065,0.0186,-6,0.0868,0.0868,642.0,1284.0
