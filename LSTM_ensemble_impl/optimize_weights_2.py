@@ -10,8 +10,8 @@ from pathlib import Path
 from template.prelude_template import load_data, backtest_dynamic_dca
 
 # Import your model logic and the training function
-from example_LSTM_merged_2.model_development_example_2 import precompute_features, compute_window_weights
-from example_LSTM_merged_2.run_backtest import train_lstm_model
+from LSTM_ensemble_impl.model_development_example_2 import precompute_features, compute_window_weights
+from LSTM_ensemble_impl.run_backtest import train_lstm_model
 
 # Globals to hold the state across iterations
 _FEATURES_DF = None

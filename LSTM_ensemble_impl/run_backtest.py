@@ -11,7 +11,7 @@ from template.prelude_template import load_data
 from template.backtest_template import run_full_analysis
 
 # Import Strategy 1
-from example_LSTM_merged_2.model_development_example_2 import precompute_features, compute_window_weights, create_sequences
+from LSTM_ensemble_impl.model_development_example_2 import precompute_features, compute_window_weights, create_sequences
 
 # Globals
 _FEATURES_DF = None
