@@ -100,3 +100,9 @@ Each run retrains the LSTM and precomputes features once, then loops. Full stage
 - **Reproducibility**: `train_lstm_model` in `run_backtest.py` sets deterministic seeds; optimization assumes the same data and code produce comparable scores across runs.
 - **LSTM cache**: `model_development_example_2.compute_weights_fast` caches buy points per `(start_date, end_date)`, which speeds up repeated backtests that share the same LSTM model and feature matrix.
 - **Refining further**: If you change the score definition or backtest template, re-run both stages (or at least stage 2) so CSVs and `run_backtest.py` stay consistent.
+
+---
+
+## AI Disclaimer
+
+This markdown file is generated with help of Cursor, referencing used python files and the model example markdown files.

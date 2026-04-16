@@ -5,6 +5,8 @@ This module integrates:
 2. Deterministic signals (MVRV, FGI, Polymarket, S&P 500, MA) for capital allocation (Sizing).
 """
 
+# this model was generated with assistance of Gemini, which also references code from already available templates in the project
+
 import logging
 from pathlib import Path
 import numpy as np
