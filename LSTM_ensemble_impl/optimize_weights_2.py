@@ -1,3 +1,4 @@
+# this weight optimizer was generated with assistance of Gemini, which also references code from already available templates in the project
 import os
 import csv
 import json

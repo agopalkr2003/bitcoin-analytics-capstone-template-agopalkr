@@ -1,3 +1,4 @@
+# this backtest was generated with assistance of Gemini, which references the template backtest file, and adding the LSTM training and implementation
 import os
 import random
 import logging
