@@ -123,28 +123,6 @@ So for production-style “lock past / uniform future” behavior as in Example 
 
 ---
 
-## `run_backtest.py` — execution flow
-
-```mermaid
-sequenceDiagram
-    participant Main as main()
-    participant Load as load_data()
-    participant Train as train_lstm_model()
-    participant Feat as precompute_features()
-    participant Wrap as compute_weights_wrapper()
-    participant Ana as run_full_analysis()
-
-    Main->>Load: BTC dataframe
-    Main->>Train: 2018 slice, build LSTM
-    Main->>Feat: full history features → _FEATURES_DF
-    Main->>Ana: btc_df, features_df, compute_weights_wrapper
-
-    Note over Ana: For each backtest window...
-    Ana->>Wrap: df_window
-    Wrap->>Wrap: optimal_weights dict
-    Wrap->>Feat: compute_window_weights(_lstm_model, _FEATURES_DF, ...)
-```
-
 ### Determinism
 
 `set_deterministic_seeds(42)` sets Python, NumPy, and TensorFlow seeds so runs are repeatable.
@@ -155,7 +133,7 @@ sequenceDiagram
 - Builds the **same** technical columns as inference (momentum, acceleration, MAs, vol), shifted join, `dropna`.
 - The code assigns **`Target`** labels via `scipy.signal.argrelextrema` on price (local max = 1, min = 2). The training dataframe passed to `MinMaxScaler` is **`PriceUSD_coinmetrics` + shifted technicals only** — the `Target` column is **not** included in that matrix. Training therefore minimizes **MSE** on **`y = next timestep of column 0`** (scaled first feature, i.e. price in the scaled ordering), for 30 epochs, Adam, batch 16, LSTM(100) + Dropout(0.2) + Dense(1).
 
-### Optimal sizing weights (current script)
+### Optimal sizing weights (determined from weight optimization)
 
 `compute_weights_wrapper` injects:
 
@@ -189,7 +167,7 @@ The wrapper closes over the **global** `_FEATURES_DF` and `_lstm_model`.
 | `MVRV_GRADIENT_WINDOW` | 30 | Gradient / EMA span. |
 | `MVRV_ACCEL_WINDOW` | 14 | Acceleration diff span. |
 | `MVRV_VOLATILITY_WINDOW` | 90 | Volatility rolling std. |
-| `DYNAMIC_STRENGTH` | 5.0 | Defined in module; **Example 2 sizing does not use the Example 1 `exp(combined * DYNAMIC_STRENGTH)` path** — conviction is product-of-interps instead. |
+| `DYNAMIC_STRENGTH` | 5.0 | Defined in module; **Example 2 sizing does not use the Example 1 `exp(combined * DYNAMIC_STRENGTH)` path** — conviction is product-of-interpolations instead. |
 | Zone thresholds | −2, −1, 1.5, 2.5 | MVRV zone buckets (features still computed for consistency / future use). |
 
 ---
@@ -228,3 +206,9 @@ Paths are resolved relative to the repo: `data/` under the project root (see `Pa
 | `template.backtest_template.run_full_analysis` | Portfolio simulation, metrics, plots (not duplicated here). |
 
 This should be enough to navigate the code, reproduce the pipeline, and see where to change **timing** (LSTM features / buy rules) versus **sizing** (interpolation tables or `optimal_weights` in `run_backtest.py`).
+
+---
+
+## AI Disclaimer
+
+This markdown file is generated with help of Cursor, referencing used python files and the previous example markdown files.
