@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests numpy pandas scipy
+          pip install requests numpy pandas scipy pyarrow
 
       - name: Run paper trader
         working-directory: live_trading
