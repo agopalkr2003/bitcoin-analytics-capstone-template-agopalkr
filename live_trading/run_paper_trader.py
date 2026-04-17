@@ -51,13 +51,13 @@ def load_config(path: Path) -> dict:
         return json.load(f)
 
 
-def cmd_tick(config: dict, state_path: Path) -> None:
+def cmd_tick(config: dict, state_path: Path, force: bool = False) -> None:
     """Run one daily tick."""
     state = load_state(state_path)
 
     # Check if already ran today
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    if state.get("last_run") and state["last_run"][:10] == today:
+    if not force and state.get("last_run") and state["last_run"][:10] == today:
         logger.info(f"Already ran today ({today}). Use --force to override.")
         # Still show dashboard
         price = fetch_current_btc_price()
@@ -440,11 +440,7 @@ def main() -> None:
     elif args.daemon:
         cmd_daemon(config, state_path)
     else:
-        if args.force:
-            state = load_state(state_path)
-            state["last_run"] = None
-            save_state(state, state_path)
-        cmd_tick(config, state_path)
+        cmd_tick(config, state_path, force=args.force)
 
 
 if __name__ == "__main__":
