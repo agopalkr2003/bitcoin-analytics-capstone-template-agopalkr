@@ -1,0 +1,58 @@
+{
+    "daily_contribution_usd": 10.0,
+    "exchange": {
+        "name": "coinbase",
+        "api_key": "",
+        "api_secret": "",
+        "passphrase": "",
+        "sandbox": true
+    },
+    "fees": {
+        "maker_fee_rate": 0.004,
+        "taker_fee_rate": 0.006
+    },
+    "tax": {
+        "short_term_rate": 0.24,
+        "long_term_rate": 0.15,
+        "state_rate": 0.0
+    },
+    "sell_parameters": {
+        "min_signals_required": 4,
+        "mvrv_zscore_min": 2.2,
+        "puell_min": 1.4,
+        "fgi_min": 75,
+        "price_vs_ma_min": 0.30,
+        "min_days_post_halving": 300,
+        "trailing_stop_pct": 0.15,
+        "trailing_stop_max_days": 60,
+        "max_cumulative_sell_pct": 0.40,
+        "sell_cooldown_days": 60
+    },
+    "reinvestment": {
+        "enabled": true,
+        "drawdown_threshold": -0.40,
+        "fraction_per_day": 0.30,
+        "cooldown_days": 7
+    },
+    "buy_weights": {
+        "mvrv": 0.5,
+        "fgi": 8.0,
+        "poly": 3.0,
+        "noncrypto_poly": 10.0,
+        "puell": 3.0
+    },
+    "puell_params": {
+        "low_input": 0.3,
+        "neutral_input": 1.0,
+        "high_input": 2.0,
+        "low_output": 1.55,
+        "high_output": 0.65
+    },
+    "alerts": {
+        "email": "",
+        "webhook_url": ""
+    },
+    "data_dir": "live_data",
+    "state_file": "paper_state.json",
+    "log_file": "paper_trading.log"
+}
