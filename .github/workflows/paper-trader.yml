@@ -39,6 +39,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add live_trading/paper_state.json live_trading/paper_trading.log || true
+          git add live_trading/paper_state.json
+          git add live_trading/paper_trading.log 2>/dev/null || true
           git diff --cached --quiet || git commit -m "Paper trade $(date -u +%Y-%m-%d)"
+          git pull --rebase
           git push
